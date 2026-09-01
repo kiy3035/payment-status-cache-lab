@@ -1,0 +1,10 @@
+.env
+.gradle/
+.gradle-user-home/
+.tmp/
+.docker-config/
+build/
+out/
+.idea/
+*.iml
+*.log
