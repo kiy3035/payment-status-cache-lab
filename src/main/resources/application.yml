@@ -11,6 +11,8 @@ spring:
       port: ${REDIS_PORT:6379}
       timeout: ${PAYMENT_STATUS_CACHE_COMMAND_TIMEOUT:100ms}
       connect-timeout: ${PAYMENT_STATUS_CACHE_CONNECT_TIMEOUT:100ms}
+      repositories:
+        enabled: false
   flyway:
     enabled: true
   jpa:
@@ -24,7 +26,7 @@ spring:
 
 payment:
   status-cache:
-    enabled: ${PAYMENT_STATUS_CACHE_ENABLED:true}
+    enabled: ${PAYMENT_STATUS_CACHE_ENABLED:false}
     ttl: ${PAYMENT_STATUS_CACHE_TTL:5m}
     command-timeout: ${PAYMENT_STATUS_CACHE_COMMAND_TIMEOUT:100ms}
     connect-timeout: ${PAYMENT_STATUS_CACHE_CONNECT_TIMEOUT:100ms}
@@ -33,6 +35,9 @@ server:
   port: ${SERVER_PORT:8080}
 
 management:
+  health:
+    redis:
+      enabled: ${PAYMENT_STATUS_CACHE_ENABLED:false}
   endpoints:
     web:
       exposure:
@@ -46,4 +51,4 @@ management:
         liveness:
           include: livenessState
         readiness:
-          include: readinessState,db,redis
+          include: readinessState,db
