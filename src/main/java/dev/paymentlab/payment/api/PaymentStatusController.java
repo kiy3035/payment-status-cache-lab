@@ -1,5 +1,6 @@
 package dev.paymentlab.payment.api;
 
+import dev.paymentlab.payment.PaymentStatusQueryResult;
 import dev.paymentlab.payment.PaymentStatusService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -15,8 +16,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentStatusController {
 
     private static final String CACHE_RESULT_HEADER = "X-Cache-Result";
-    private static final String CACHE_DISABLED = "DISABLED";
-
     private final PaymentStatusService paymentStatusService;
 
     public PaymentStatusController(PaymentStatusService paymentStatusService) {
@@ -25,9 +24,10 @@ public class PaymentStatusController {
 
     @GetMapping("/{paymentId}/status")
     public ResponseEntity<PaymentStatusResponse> getStatus(@PathVariable long paymentId) {
+        PaymentStatusQueryResult result = paymentStatusService.getStatus(paymentId);
         return ResponseEntity.ok()
-                .header(CACHE_RESULT_HEADER, CACHE_DISABLED)
-                .body(paymentStatusService.getStatus(paymentId));
+                .header(CACHE_RESULT_HEADER, result.cacheResult().headerValue())
+                .body(result.response());
     }
 
     @PatchMapping("/{paymentId}/status")

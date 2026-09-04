@@ -60,6 +60,7 @@ class InfrastructureSmokeTest {
     @Test
     void springContextStartsAndCachePropertiesBind() {
         assertThat(cacheProperties.enabled()).isFalse();
+        assertThat(cacheProperties.keyPrefix()).isEqualTo("payment:status:");
         assertThat(cacheProperties.ttl()).isEqualTo(Duration.ofMinutes(5));
         assertThat(cacheProperties.commandTimeout()).isEqualTo(Duration.ofMillis(100));
         assertThat(cacheProperties.connectTimeout()).isEqualTo(Duration.ofMillis(100));
