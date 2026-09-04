@@ -9,7 +9,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -24,7 +24,7 @@ services:
     image: redis:7.4.5-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -37,8 +37,8 @@ services:
   toxiproxy:
     image: ghcr.io/shopify/toxiproxy:2.12.0
     ports:
-      - "8474:8474"
-      - "26379:26379"
+      - "127.0.0.1:${TOXIPROXY_API_PORT:-8474}:8474"
+      - "127.0.0.1:${TOXIPROXY_REDIS_PORT:-26379}:26379"
     healthcheck:
       test: ["CMD", "/toxiproxy", "-version"]
       interval: 10s

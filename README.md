@@ -1,6 +1,6 @@
 # payment-status-cache-lab
 
-결제 상태 조회 실험을 위한 로컬 백엔드 프로젝트다. 현재 **3단계 Redis cache-aside 조회·DB commit 이후 캐시 동기화까지 구현**되어 있다. 실제 Redis 장애 주입과 성능 측정은 아직 수행하지 않았다.
+결제 상태 조회 실험을 위한 로컬 백엔드 프로젝트다. **4단계 Redis 장애·복구 검증까지 완료**했다. Redis cache-aside 조회·DB commit 이후 캐시 동기화와 실제 장애 재현 코드를 제공한다. 실행 결과는 `PROGRESS.md`에 기록한다. 성능 측정은 아직 수행하지 않았다.
 
 ## 요구 환경
 
@@ -8,6 +8,7 @@
 - Docker Desktop 또는 Docker Engine
 - Docker Compose
 - 프로젝트에 포함된 Gradle Wrapper 8.12.1
+- 자동 실기동 검증 스크립트를 사용할 경우 PowerShell 7 이상
 
 MySQL, Redis, Gradle을 전역 설치할 필요는 없다.
 
@@ -19,7 +20,7 @@ PowerShell에서 예시 파일을 복사하고 `MYSQL_PASSWORD`, `MYSQL_ROOT_PAS
 Copy-Item .env.example .env
 ```
 
-기본 포트가 이미 사용 중이면 `MYSQL_PORT`, `REDIS_PORT`, `SERVER_PORT`를 사용 가능한 값으로 바꾼다. `.env`는 Git 제외 대상이다.
+기본 포트가 이미 사용 중이면 `MYSQL_PORT`, `REDIS_PORT`, `SERVER_PORT`를 사용 가능한 값으로 바꾼다. Toxiproxy 포트도 `TOXIPROXY_API_PORT`, `TOXIPROXY_REDIS_PORT`로 변경할 수 있다. Compose의 MySQL·Redis·Toxiproxy 포트는 로컬 loopback에만 공개한다. `.env`는 Git 제외 대상이다.
 
 Docker Compose는 `.env`를 자동으로 읽는다. Spring Boot 실행 전에는 다음 명령으로 `.env`를 현재 PowerShell 프로세스에 불러온다.
 
@@ -47,6 +48,14 @@ Docker가 실행 중인 상태에서 실행한다.
 테스트는 실제 MySQL 8.4.6과 Redis 7.4.5 Testcontainers를 사용한다. 현재 전체 테스트에는 상태 전이 단위 테스트, DB-only API, Flyway/JPA validation, rollback, optimistic locking 충돌, 공통 오류 응답과 인프라 smoke test가 포함된다.
 
 캐시 테스트는 miss→JSON/TTL 저장→hit, hit에서 repository 미호출, commit 전 미갱신·commit 후 갱신, 외부 transaction rollback 시 캐시 보존, Lettuce command timeout 설정을 확인한다. timeout/연결 오류 분기 단위 테스트는 실제 네트워크 장애 검증을 대신하지 않는다.
+
+4단계 통합 테스트는 MySQL·Redis·Toxiproxy 2.12.0 컨테이너와 실제 HTTP 서버를 사용한다. Toxiproxy 300ms 지연, 연결 차단, Redis ACL 기반 GET/SET 거부, Redis 실제 stop/start, Redis·DB 동시 연결 차단, liveness·readiness, 실제 동시 HTTP 변경을 검증한다. 동시성 테스트는 테스트용 service spy에서 두 transaction의 최초 읽기만 barrier로 동기화하며 DB 갱신·commit·충돌은 실제 MySQL에서 처리한다. 운영 코드에는 테스트용 대기나 분기가 없다.
+
+장애 테스트만 실행하려면 다음을 사용한다.
+
+```powershell
+.\gradlew.bat test --tests dev.paymentlab.payment.cache.PaymentStatusFailureIntegrationTest --rerun-tasks --max-workers=1
+```
 
 ## Redis 인프라 연결 확인
 
@@ -122,7 +131,7 @@ docker compose exec -T redis redis-cli TTL $cacheKey
 Invoke-WebRequest http://localhost:8080/api/v1/payments/1/status
 ```
 
-정상 응답은 `paymentId`, `status`, `version`, `updatedAt`을 포함한다. `X-Cache-Result`는 모드·조회 경로에 따라 `DISABLED`, `HIT`, `MISS_FALLBACK`, `TIMEOUT_FALLBACK`, `ERROR_FALLBACK`이다. 마지막 두 장애 경로의 실제 네트워크 검증은 4단계에 남아 있다.
+정상 응답은 `paymentId`, `status`, `version`, `updatedAt`을 포함한다. `X-Cache-Result`는 모드·조회 경로에 따라 `DISABLED`, `HIT`, `MISS_FALLBACK`, `TIMEOUT_FALLBACK`, `ERROR_FALLBACK`이다.
 
 ## 결제 상태 변경 API
 
@@ -158,6 +167,36 @@ counter는 사용한 조합부터 나타난다. 상태 변경 성공·실패는 
 
 MySQL과 Redis는 하나의 원자적 transaction이 아니다. commit 후 Redis 쓰기만 실패하면 이전 캐시가 TTL 동안 남을 수 있다. 동시 조회가 읽은 과거 DB 값을 나중에 저장해 최신 캐시를 덮어쓰는 경쟁도 가능하다. TTL은 각 캐시 값의 수명을 제한할 뿐 강한 일관성을 보장하지 않으며 저장 시 갱신된다. Outbox·CDC·versioned key는 이번 구현에 추가하지 않았다.
 
+Redis timeout은 서버에서 명령이 전혀 실행되지 않았다는 뜻이 아니다. 특히 SET 응답만 지연되면 서버 쓰기는 성공했어도 클라이언트에는 timeout으로 보일 수 있다. 캐시 쓰기 error metric을 서버 쓰기 미실행 건수로 해석하지 않는다.
+
+## 실제 장애·복구 일괄 검증
+
+기존 앱을 종료하거나 기존 DB를 비울 필요 없이 별도의 PowerShell 7 프로세스에서 실행한다.
+
+```powershell
+.\gradlew.bat bootJar
+pwsh -NoProfile -File .\scripts\verify-stage4.ps1
+```
+
+스크립트는 임의의 고유 Compose 프로젝트와 빈 MySQL·Redis 볼륨을 생성하고, 런타임에 비밀번호와 사용 가능한 포트를 정한다. `.env`를 수정하지 않고 프로세스 환경변수는 종료 시 복원한다. 포트 선택과 바인딩 사이에 다른 프로세스가 포트를 점유하면 실패할 수 있으므로 정리 결과를 확인한 뒤 재실행한다.
+
+실행 순서는 다음과 같다.
+
+1. MySQL·Redis·Toxiproxy health, 앱 health, Redis PING 및 miss→hit 확인
+2. 이미 연결된 Redis 응답에 300ms 지연을 주입하고 100ms command timeout fallback 확인
+3. 실제 GET 거부와 SET 거부에서 정상 DB 응답, commit 성공 및 남은 stale 캐시 확인
+4. Redis stop 중 조회·변경 성공, liveness·readiness UP, 전체 health DOWN 확인
+5. 앱 재시작 없이 Redis start 후 이전에 캐시되지 않은 ID의 miss→hit 복구 확인
+6. MySQL 상태·version과 합성 데이터 100,000건 확인
+7. Redis 연결 차단과 MySQL stop 중 GET 503, liveness UP, readiness DOWN 확인
+8. 지표 출력 후 검증용 앱·컨테이너·네트워크·볼륨 정리
+
+성공하면 `STAGE4_RUNTIME_VERIFICATION=PASS`와 `STAGE4_CLEANUP=PASS`가 출력된다. 앱 로그는 Git 제외 `build/payment-status-cache-lab-stage4-*.log`에 남는다. 실패하더라도 `finally`에서 이 실행이 만든 리소스만 정리하며 기존 프로젝트 볼륨은 건드리지 않는다. 동시 HTTP 충돌과 신규 연결 거부는 앞의 통합 테스트에서 별도로 검증한다.
+
+Lettuce는 자동 재연결을 유지하되 연결 단절을 감지한 뒤의 새 명령은 큐에 쌓지 않고 거부한다. 연결 단절 감지 이전에 진행 중이던 명령은 timeout으로 끝날 수 있다. 관련 설정의 의미는 [Lettuce 공식 Client Options](https://github.com/redis/lettuce/wiki/Client-Options), 장애 주입 API는 [Toxiproxy 2.12.0 공식 문서](https://github.com/Shopify/toxiproxy/blob/v2.12.0/README.md)를 따른다.
+
+100ms는 Redis **명령당** 제한이며 HTTP 전체 응답시간 제한이 아니다. GET timeout 후 DB 조회와 best-effort SET timeout이 각각 더해질 수 있다. 지연 검증의 HTTP 허용 범위는 80~900ms이며 처리량·성능 개선 측정이 아니다. 이 검증에서만 DB pool 대기를 700ms, 연결 timeout을 1초, socket timeout을 10초로 지정하며 운영 기본 DB 설정은 변경하지 않는다.
+
 ## MySQL migration과 데이터 확인
 
 ```powershell
@@ -191,4 +230,4 @@ docker compose down --volumes
 
 ## 현재 범위와 다음 단계
 
-현재 3단계까지 구현했다. 4단계의 Toxiproxy 지연·Redis 중단/복구·동시 의존성 실패 등 실제 장애 검증과 5단계 성능 측정은 아직 수행하지 않았다. 사용자 요청 전에는 다음 단계를 시작하지 않는다.
+4단계 장애·복구 검증의 실제 결과는 `PROGRESS.md`를 참고한다. 5단계 100 RPS 성능 측정·수집 자동화와 6단계 최종 결과 문서는 아직 수행하지 않았다. 사용자 요청 전에는 다음 단계를 시작하지 않는다.

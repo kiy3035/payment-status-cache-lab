@@ -7,7 +7,8 @@
 - 1단계 — 프로젝트와 로컬 실행 환경: 완료
 - 2단계 — 상태 전이와 DB-only API: 완료
 - 3단계 — Redis 우선 조회와 상태 동기화: 완료
-- 4~6단계: 미착수
+- 4단계 — Redis 장애와 복구 검증: 완료
+- 5~6단계: 미착수
 
 ## 1단계 완료 항목
 
@@ -336,20 +337,104 @@ docker compose -p payment-status-cache-lab-stage3-check down --volumes
 - `src/test/java/dev/paymentlab/InfrastructureSmokeTest.java`
 - `README.md`, `PROGRESS.md`
 
-## PR
+## 4단계 구현 항목
+
+- 실제 MySQL·Redis·Toxiproxy Testcontainers 및 RANDOM_PORT HTTP 서버 장애 통합 테스트
+- 300ms Redis 응답 지연과 실제 Lettuce 100ms command timeout 검증
+- 신규 Redis 연결 거부, 실제 Redis ACL GET/SET 권한 오류, 재저장 실패 검증
+- commit 후 SET 실패에도 PATCH 성공 및 stale 캐시 보존 확인
+- Redis 실제 stop/start, 앱 프로세스 유지, liveness·readiness 격리, miss→hit 복구 검증
+- Redis·DB 동시 장애 GET/PATCH 503 및 DB만 장애인 경우 Redis hit 검증
+- 두 실제 HTTP transaction의 동일 version 읽기·동시 변경·한 건 commit/한 건 409 검증
+- DB transaction 생성 실패의 HTTP 500을 공통 HTTP 503으로 수정
+- Lettuce 기존 client options를 복사해 단절 중 새 명령 거부, 자동 재연결·timeout 보존
+- 고유 임시 Compose 프로젝트와 런타임 비밀번호를 사용하는 `scripts/verify-stage4.ps1`
+- Toxiproxy 공개 포트 환경변수 및 MySQL·Redis·Toxiproxy 공개 포트의 loopback 바인딩
+
+## 4단계 검증 중 발견한 문제와 수정
+
+- 첫 장애 테스트 실행은 8개 모두 context 초기화에서 실패했다. 검증용 MySQL socket timeout 500ms가 100,000건 seed migration을 중단시킨 `Read timed out` 로그를 확인했다. 검증용 socket timeout을 10초, 연결 timeout을 1초로 조정했으며 Redis command/connect timeout 100ms는 유지했다.
+- 두 번째 실행은 8개 중 6개 통과, 2개 실패였다. 실제 Redis·DB 연결 동시 차단에서 `CannotCreateTransactionException`이 기존 `DataAccessException` 처리 범위 밖이어서 HTTP 500이 반환됐다. 해당 예외만 공통 503 handler에 추가하고 GET/PATCH 회귀 테스트를 추가했다.
+- 동시성 테스트의 Spring Data interface spy에서 추상 메서드 `callRealMethod()` 호출이 실패했다. 테스트용 concrete service spy의 transaction 안에서 두 최초 읽기를 barrier로 맞추고 나머지 서비스·repository·MySQL 경로는 실제 실행하도록 수정했다. 운영 코드에 테스트용 지연을 넣지 않았다.
+- 위 수정 후 선택 테스트 11개가 `BUILD SUCCESSFUL in 2m 11s`로 통과했다.
+- Redis 실제 중단 중 기본 Lettuce가 새 명령을 대기시켜 반복 timeout으로 분류되는 현상을 확인했다. 단절 감지 이후의 새 명령은 `REJECT_COMMANDS`로 즉시 거부하도록 보완했다. 이미 진행 중인 명령의 timeout 가능성과 자동 재연결은 유지한다.
+- 초기 기동 중 Redis handshake가 100ms를 넘길 수 있어 테스트 준비 단계는 정상 연결을 제한 시간 안에서 재확인한다. 운영 timeout 값을 완화하지 않는다.
+- 전체 테스트 종료 시 Hikari connection executor 종료 대기 경고가 1회 출력됐으나 이후 pool 종료 완료와 테스트 프로세스 종료를 확인했다. 테스트 로그에 기록된 컨테이너 9개는 모두 제거됐다. 다른 작업의 Testcontainers는 정리 대상으로 삼지 않았다.
+- 별도 boot jar 검증의 첫 두 실행은 Redis 중단 뒤 Actuator 상태 검증에서 중단됐다. PowerShell의 Actuator 전용 JSON 응답이 바이트 배열로 반환되는 경우를 문자열과 동일하게 처리한 것이 원인이었다. 응답 바이트를 UTF-8로 해석하도록 스크립트를 보완했다. 두 실행 모두 `finally` 정리를 완료했다.
+
+## 4단계 실제 실행 명령과 테스트 결과
+
+```powershell
+$env:GRADLE_USER_HOME = (Resolve-Path -LiteralPath '..\.gradle-user-home').Path
+$env:JAVA_TOOL_OPTIONS = '-Djava.io.tmpdir=' + (Resolve-Path -LiteralPath '..\.tmp').Path
+$env:DOCKER_HOST = 'npipe:////./pipe/docker_engine'
+.\gradlew.bat --no-daemon test --tests dev.paymentlab.payment.cache.PaymentStatusFailureIntegrationTest --max-workers=1 --console=plain
+.\gradlew.bat --no-daemon test --tests dev.paymentlab.payment.cache.PaymentStatusFailureIntegrationTest --tests dev.paymentlab.payment.api.PaymentAvailabilityApiTest --max-workers=1 --console=plain
+.\gradlew.bat --no-daemon test bootJar --rerun-tasks --max-workers=1 --console=plain
+& '.\scripts\verify-stage4.ps1'
+git diff --check
+```
+
+- 최종 전체 테스트와 bootJar: `BUILD SUCCESSFUL in 3m 24s`, 6개 작업 모두 실행
+- XML 집계: **52개 실행, 성공 52, 실패 0, errors 0, skipped 0**
+- 기존 테스트 40개 전부 통과
+- 실제 장애·복구·동시성 통합 테스트 10개 통과
+- transaction 시작 실패 HTTP 503 회귀 테스트 2개 통과
+- 최종 실제 지연 테스트: Redis downstream 300ms, Lettuce command timeout 100ms, HTTP 256ms, `TIMEOUT_FALLBACK` 200
+- 100ms command/connect timeout, 자동 재연결, 단절 중 새 명령 거부 옵션을 실제 client configuration에서 확인
+- 신규 연결 거부는 테스트에서 공유 연결을 초기화한 후 proxy listener를 차단한다. Redis 실제 중단·복구 테스트에서는 연결 초기화나 앱 재시작 없이 자동 복구를 확인한다.
+- 동시 HTTP 변경 결과: HTTP 200 1개, `PAYMENT_STATUS_CONFLICT` HTTP 409 1개, DB version 1, cache write success 1회
+- 검증용 DB pool 대기는 700ms, DB 연결 timeout은 1초, socket timeout은 10초다. 운영 DB 설정은 변경하지 않았다.
+- 전체 테스트 이후 운영·테스트 Java 코드는 변경하지 않았다. 이후 수정은 실기동 스크립트·Compose 바인딩·문서에 한정했다.
+
+## 4단계 최종 실제 실행 상태
+
+- 최종 스크립트 종료 코드 0: `STAGE4_RUNTIME_VERIFICATION=PASS`, `STAGE4_CLEANUP=PASS`
+- 검증 project: `payment-status-cache-lab-stage4-cb249afb`, 앱 PID `16504`
+- MySQL 8.4.6·Redis 7.4.5·Toxiproxy 2.12.0 모두 Compose `healthy`
+- 시작 시 앱 전체 health UP, Redis PING 성공, 정상 miss→hit 확인
+- Toxiproxy 300ms downstream 지연: HTTP 237ms, 200 `TIMEOUT_FALLBACK`
+- 실제 Redis GET 거부: 200 `ERROR_FALLBACK`, DB 결과 재저장 후 GET 권한 복구 시 HIT
+- 실제 Redis SET 거부: miss 조회 정상 응답, 새 캐시 키 미생성
+- SET 거부 중 PATCH: 200 AUTH/version 1, DB commit 성공, 기존 캐시 READY HIT가 남는 stale 상태 확인
+- Redis stop 중: 200 `ERROR_FALLBACK`, PATCH AUTH 성공, liveness/readiness UP, 전체 health DOWN
+- Redis start 후 앱 PID 유지: 이전에 캐시되지 않은 ID 115가 AUTH `MISS_FALLBACK` → `HIT`
+- MySQL 원본 ID 109·115 모두 AUTH/version 1, 전체 100,000건
+- Redis 연결 차단 및 MySQL stop: 503 `PAYMENT_STATUS_UNAVAILABLE`, liveness UP, readiness DOWN
+- 최종 기능 검증 지표: cache access error 3·hit 4·miss 4·timeout 1, cache write error 5·success 4
+- DB read reason miss 4·redis_error 3·timeout 1, READY→AUTH transition success 2
+- 위 지표에는 실패한 DB 조회 시도도 포함되며 기능 검증 요청의 counter일 뿐 QPS·성능 측정 결과가 아니다.
+- 검증용 앱 종료, 임시 컨테이너·네트워크·볼륨 제거 확인. 기존 프로젝트 볼륨은 보존했다.
+- 앱 로그는 Git 제외 `build/payment-status-cache-lab-stage4-cb249afb.stdout.log`·`.stderr.log`에 보존한다.
+
+## 4단계 주요 생성·수정 파일
+
+- `src/main/java/dev/paymentlab/common/GlobalExceptionHandler.java`
+- `src/main/java/dev/paymentlab/config/RedisClientConfiguration.java`
+- `src/test/java/dev/paymentlab/payment/api/PaymentAvailabilityApiTest.java`
+- `src/test/java/dev/paymentlab/payment/cache/PaymentStatusFailureIntegrationTest.java`
+- `scripts/verify-stage4.ps1`
+- `docker-compose.yml`, `.env.example`, `README.md`, `PROGRESS.md`
+
+## PR 이력
 
 - 원격 `kiy3035/payment-status-cache-lab`의 초기 `main`에는 `.gitattributes`만 존재했다.
 - 1단계 PR #1은 `main`에 병합됐다.
 - 2단계 PR #2는 `main`에 병합됐다. 병합 기준 commit은 `d486245`다.
-- 3단계 변경은 `codex/stage-3-redis-cache` branch로 분리했다.
-- 3단계 PR 본문은 Redis 조회·동기화 작업과 적용 전후 비교를 중심으로 작성한다.
+- 3단계 PR [#3](https://github.com/kiy3035/payment-status-cache-lab/pull/3)은 사용자 요청에 따라 `main`에 병합했다. 병합 commit은 `ca63634`다.
+- PR 작성자와 실행 계정이 같으므로 별도 자기 승인 리뷰는 하지 않았다. 보호 규칙 우회 없이 일반 merge로 처리했다.
+- 4단계는 병합된 `main` 기준 `codex/stage-4-failure-recovery` branch에서 진행한다.
 
 ## 미완료 작업과 제한사항
 
-- Redis 장애 시 liveness 유지의 실제 장애 주입은 4단계 범위다. 1단계에서는 Redis를 liveness group에서 제외한 설정 구조와 정상 기동 상태만 확인했다.
-- Toxiproxy proxy/toxic 생성과 지연 주입은 4단계 범위이므로 수행하지 않았다.
-- DB-only k6 골격만 생성했으며 성능 측정과 결과 수집은 5단계 범위이므로 실행하지 않았다.
-- 실제 장애를 발생시키는 Redis timeout·connection/write failure·복구 검증은 4단계 미착수 상태다.
+- 5단계 100 RPS·3회 반복 성능 비교와 원시 결과 수집은 미착수다. DB-only k6 골격 외의 측정 자동화는 아직 없다.
+- 6단계 RESULTS·BLOG_DRAFT와 성능 결과 기반 최종 문서화는 미착수다.
+- DB·Redis는 원자적 transaction이 아니다. SET 실패 시 stale 값, 늦게 도착한 DB 조회 결과에 의한 덮어쓰기, timeout 뒤 서버 쓰기 성공 가능성은 남는다.
+- 100ms는 Redis 명령당 제한이다. 읽기 timeout·DB fallback·쓰기 timeout이 누적될 수 있으며 HTTP 전체 100ms 보장은 아니다.
+- 단절 감지 전 진행 중이던 명령은 timeout으로 분류될 수 있다. 단절 감지 이후 새 명령은 오류로 거부하고 자동 재연결한다.
+- 복구 시 기존 모든 키를 삭제하지 않는다. miss→hit 검증은 장애 중 캐시되지 않은 ID를 사용하며 기존 stale 캐시가 자동으로 모두 최신화된다는 뜻이 아니다.
+- 기존 Flyway MySQL 8.4 지원범위 경고는 남지만 실제 migration·JPA validation·전체 테스트는 통과했다.
+- 무료 로컬 도구만 사용했다. 유료 API·서비스·PG사 연동·실제 결제는 수행하지 않았다.
 
 ## 재현 명령
 
@@ -367,4 +452,4 @@ $env:PAYMENT_STATUS_CACHE_ENABLED = 'true'
 
 ## 다음 단계 범위
 
-4단계에서는 Toxiproxy timeout, Redis 연결·read/write 실패, Redis 중단·복구, Redis·DB 동시 실패, liveness 격리와 동시 상태 변경을 실제로 검증한다. 사용자 요청 전에는 착수하지 않는다.
+5단계에서는 동일 조건 100 RPS의 DB-only·Redis 정상·중단·timeout·복구 측정, DB QPS·CPU 자동 수집, 정상 비교 3회 반복·중앙값, JSON·CSV 원시 결과와 비교표 생성을 구현한다. 사용자 요청 전에는 착수하지 않는다.
