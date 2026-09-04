@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -44,8 +45,8 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "요청 값을 확인해 주세요.");
     }
 
-    @ExceptionHandler(DataAccessException.class)
-    public ResponseEntity<ApiErrorResponse> handleDataAccessFailure(DataAccessException exception) {
+    @ExceptionHandler({DataAccessException.class, CannotCreateTransactionException.class})
+    public ResponseEntity<ApiErrorResponse> handleDataAccessFailure(RuntimeException exception) {
         return error(
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "PAYMENT_STATUS_UNAVAILABLE",
