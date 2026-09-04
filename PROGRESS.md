@@ -1,12 +1,13 @@
 # 진행 상황
 
-기준일: 2026-09-03
+기준일: 2026-09-04
 
 ## 단계 상태
 
 - 1단계 — 프로젝트와 로컬 실행 환경: 완료
 - 2단계 — 상태 전이와 DB-only API: 완료
-- 3~6단계: 미착수
+- 3단계 — Redis 우선 조회와 상태 동기화: 완료
+- 4~6단계: 미착수
 
 ## 1단계 완료 항목
 
@@ -227,18 +228,128 @@ rg -n "RedisConnection|RedisCommand|Bootstrapping Spring Data Redis repositories
 - `k6/db-only.js`
 - `README.md`, `PROGRESS.md`
 
+## 3단계 완료 항목
+
+- `StringRedisTemplate` 기반 Redis adapter와 명시적 JSON 값 구성
+- 설정 기반 cache enabled, key prefix, TTL, command/connect timeout 구성
+- hit·miss·timeout·connection error 분류 및 `X-Cache-Result` 반환
+- cache disabled에서 Redis 접근과 조회 서비스 transaction 없이 공통 repository 조회
+- hit에서 DB repository 및 DB 조회 경로 생략
+- miss·timeout·error에서 공통 DB 조회 후 TTL 캐시 재저장 시도
+- 잘못된 JSON, JSON null, 다른 결제 ID의 캐시 값을 오류로 분류
+- DB transaction 안에서 불변 상태 변경 이벤트 발행
+- `AFTER_COMMIT`에서 Redis 최신 상태 갱신 및 쓰기 실패 결과 처리
+- transaction 완료 결과를 기준으로 상태 변경 성공·실패 지표 기록
+- cache access·DB read·cache write·transition counter와 조회 API·DB read timer 구성
+- README에 두 모드 전환, miss/hit, TTL, 동기화, 지표와 정합성 한계 기록
+
+## 3단계 주요 설계 결정
+
+- 캐시 hit 자체가 DB transaction을 시작하지 않도록 서비스 전체의 read-only transaction을 제거했다. DB 조회 transaction은 Spring Data repository에, 변경 transaction은 `changeStatus`에 한정한다.
+- Redis 접근 예외는 adapter에서 `DataAccessException`·`JsonProcessingException` 경계로 변환한다. timeout과 연결 오류를 구분하고, best-effort 쓰기 실패는 API 실패로 전파하지 않는다.
+- Redis key prefix와 TTL은 configuration properties에서 읽는다. 값은 paymentId·status·version·updatedAt을 포함하는 JSON이며 Java native serialization은 사용하지 않는다.
+- Lettuce timeout과 Redis health는 `payment.status-cache` 설정을 참조한다. 별도 설정 값이 서로 다르게 적용되지 않도록 단일 설정 원천을 사용한다.
+- 상태 변경 응답은 flush 이후 DB entity에서 생성한다. Redis 갱신은 `@TransactionalEventListener(AFTER_COMMIT)`에서만 수행한다.
+- 외부 transaction이 최종 rollback되면 이미 발행한 이벤트도 Redis를 갱신하지 않는다. 성공 counter 역시 commit 전에는 증가하지 않는다.
+- metric label은 제한된 결과·사유·상태 enum만 사용하며 결제 ID와 예외 메시지를 포함하지 않는다.
+
+## 3단계 실제 실행한 검증 명령
+
+```powershell
+.\gradlew.bat --no-daemon compileTestJava --console=plain
+.\gradlew.bat --no-daemon test --tests dev.paymentlab.payment.cache.PaymentStatusCacheIntegrationTest --rerun-tasks --max-workers=1 --console=plain
+.\gradlew.bat --no-daemon test --tests dev.paymentlab.payment.cache.PaymentStatusCacheAdapterTest --console=plain
+.\gradlew.bat --no-daemon test --rerun-tasks --max-workers=1 --console=plain
+.\gradlew.bat --no-daemon bootJar --console=plain
+docker compose -p payment-status-cache-lab-stage3-check config --quiet
+docker compose -p payment-status-cache-lab-stage3-check up -d --wait mysql redis
+java -jar build\libs\payment-status-cache-lab-0.0.1-SNAPSHOT.jar
+Invoke-RestMethod http://127.0.0.1:18081/actuator/health
+Invoke-RestMethod http://127.0.0.1:18081/actuator/health/liveness
+Invoke-RestMethod http://127.0.0.1:18081/actuator/health/readiness
+Invoke-WebRequest http://127.0.0.1:18081/api/v1/payments/100/status
+Invoke-WebRequest http://127.0.0.1:18081/api/v1/payments/100/status
+Invoke-RestMethod http://127.0.0.1:18081/api/v1/payments/103/status -Method Patch -ContentType 'application/json' -Body '{"targetStatus":"AUTH"}'
+Invoke-WebRequest http://127.0.0.1:18081/api/v1/payments/103/status
+docker exec payment-status-cache-lab-stage3-check-redis-1 redis-cli GET stage3:manual:payment:status:103
+docker exec payment-status-cache-lab-stage3-check-redis-1 redis-cli TTL stage3:manual:payment:status:103
+Invoke-WebRequest http://127.0.0.1:18081/actuator/prometheus
+docker compose -p payment-status-cache-lab-stage3-check down --volumes
+```
+
+실제 checkout의 부모에 있는 `.gradle-user-home`·`.tmp`를 검증 실행의 Gradle cache와 Java temp로 사용했다. 최종 실기동은 Git 제외 `build/`의 임시 PowerShell 검증 스크립트로 실행하고 `finally`에서 프로세스·Compose 리소스를 정리했다. 복제한 저장소의 재현 절차는 README를 따른다.
+
+실기동은 기존 프로젝트 데이터와 분리된 Compose project를 사용했다. MySQL host port `13307`, Redis host port `16379`, 앱 port `18081`, key prefix `stage3:manual:payment:status:`, TTL `2m`, command/connect timeout 각각 `100ms`로 검증했다. DB 비밀번호는 실행 시 생성해 프로세스 환경변수로만 전달했다.
+
+## 3단계 테스트 결과
+
+- 최종 전체 명령: `.\gradlew.bat --no-daemon test --rerun-tasks --max-workers=1 --console=plain`
+- 결과: `BUILD SUCCESSFUL in 1m 48s`, 4개 작업 모두 실행
+- XML 집계: 40개 실행, 40개 성공, 실패 0, errors 0, skipped 0
+- 기존 상태 전이 단위 테스트 9개, MySQL/API 통합 테스트 6개, 충돌 응답 테스트 1개, 인프라 smoke test 4개 성공
+- 조회 서비스 분기 단위 테스트 4개 성공
+- Redis adapter 단위 테스트 8개 성공
+- AFTER_COMMIT 동기화 쓰기 실패 결과 처리 단위 테스트 1개 성공
+- 실제 MySQL·Redis 캐시 통합 테스트 7개 성공
+- 통합 검증: miss→JSON/TTL 저장→hit 및 hit에서 repository 미호출
+- 통합 검증: 변경 commit 이후 Redis 갱신, 잘못된 전이 rollback 시 캐시 보존
+- 통합 검증: 유효한 변경 이후 외부 transaction commit 전 캐시·성공지표 미변경
+- 통합 검증: 유효한 변경 이후 외부 transaction rollback 시 DB·캐시 보존 및 failure 지표 기록
+- 통합 검증: 404 negative caching 없음, 실제 Lettuce client command timeout `100ms`
+
+## 3단계 실제 실행 상태
+
+- 최종 boot jar 빌드: `BUILD SUCCESSFUL in 19s`
+- MySQL 8.4.6 및 Redis 7.4.5 Compose health: `healthy`
+- 앱 전체 health·liveness·readiness: 모두 `UP`
+- ID 100 조회: HTTP 200 `MISS_FALLBACK` → HTTP 200 `HIT`
+- ID 103 상태 변경: HTTP 200 `AUTH`, version 1 → 조회 `HIT`
+- Redis JSON과 MySQL 원본: ID 103 `AUTH:1` 일치
+- Redis 남은 TTL: 최종 확인 시 120초
+- MySQL `payments`: 100,000건 유지
+- Prometheus: cache access hit 2·miss 1, DB read miss 1, cache write success 2, transition success 1
+- 조회 API timer count 3, DB read timer count 1 확인
+- 위 수치는 소수 기능 검증 요청의 counter이며 부하 테스트·성능 개선 수치가 아니다.
+- 최종 검증 스크립트: `STAGE3_RUNTIME_VERIFICATION=PASS`, `STAGE3_CLEANUP=PASS`
+- 검증용 앱 종료, 임시 컨테이너·네트워크·볼륨 제거 확인. 기존 프로젝트 volume은 삭제하지 않았다.
+
+## 3단계 문제와 제한사항
+
+- 코드 검토에서 캐시 hit에도 적용되던 서비스 전체 transaction을 발견해 DB 접근 범위로 축소했다. 외부 transaction rollback을 성공으로 기록하지 않도록 지표 기록 시점도 보완했다.
+- 실제 MySQL 8.4.6 기동 시 기존 Flyway 지원범위 경고는 남아 있다. migration·JPA validation·API 테스트는 모두 통과했다.
+- timeout/connection error 결과 분류와 fallback은 단위 테스트로 확인했고, Lettuce `100ms` 설정은 실제 client configuration으로 확인했다. Toxiproxy 지연·Redis 중단으로 발생시킨 실제 장애 fallback은 아직 검증하지 않았다.
+- Redis 쓰기 실패 결과가 listener 호출자에 전파되지 않는 것은 단위 테스트 범위다. 실제 Redis read/write 실패, 중단 중 상태 변경 API, Redis·DB 동시 실패는 4단계에서 검증한다.
+- DB와 Redis는 원자적 transaction이 아니므로 쓰기 실패 시 stale 값이 남거나 동시 조회의 오래된 DB 결과가 최신 캐시를 덮어쓸 수 있다. TTL은 개별 값의 수명을 제한하지만 저장 시 갱신되므로 강한 일관성을 보장하지 않는다.
+- 성능 측정·개선율은 산출하지 않았다. 유료 API·PG 연동·결제 작업은 수행하지 않았다.
+
+## 3단계 주요 생성·수정 파일
+
+- `.env.example`, `src/main/resources/application.yml`
+- `src/main/java/dev/paymentlab/config/PaymentStatusCacheProperties.java`
+- `src/main/java/dev/paymentlab/payment/PaymentStatusService.java`
+- `src/main/java/dev/paymentlab/payment/PaymentStatusQueryResult.java`
+- `src/main/java/dev/paymentlab/payment/PaymentStatusMetrics.java`
+- `src/main/java/dev/paymentlab/payment/cache/*`
+- `src/main/java/dev/paymentlab/payment/api/PaymentStatusController.java`
+- `src/test/java/dev/paymentlab/payment/PaymentStatusServiceTest.java`
+- `src/test/java/dev/paymentlab/payment/cache/*`
+- `src/test/java/dev/paymentlab/InfrastructureSmokeTest.java`
+- `README.md`, `PROGRESS.md`
+
 ## PR
 
 - 원격 `kiy3035/payment-status-cache-lab`의 초기 `main`에는 `.gitattributes`만 존재했다.
 - 1단계 PR #1은 `main`에 병합됐다.
-- 2단계 변경은 `codex/stage-2-db-only-api` branch로 분리했다.
-- 2단계 PR 본문은 상태 전이·DB-only API 작업과 적용 전후 비교를 중심으로 작성한다.
+- 2단계 PR #2는 `main`에 병합됐다. 병합 기준 commit은 `d486245`다.
+- 3단계 변경은 `codex/stage-3-redis-cache` branch로 분리했다.
+- 3단계 PR 본문은 Redis 조회·동기화 작업과 적용 전후 비교를 중심으로 작성한다.
 
 ## 미완료 작업과 제한사항
 
 - Redis 장애 시 liveness 유지의 실제 장애 주입은 4단계 범위다. 1단계에서는 Redis를 liveness group에서 제외한 설정 구조와 정상 기동 상태만 확인했다.
 - Toxiproxy proxy/toxic 생성과 지연 주입은 4단계 범위이므로 수행하지 않았다.
 - DB-only k6 골격만 생성했으며 성능 측정과 결과 수집은 5단계 범위이므로 실행하지 않았다.
+- 실제 장애를 발생시키는 Redis timeout·connection/write failure·복구 검증은 4단계 미착수 상태다.
 
 ## 재현 명령
 
@@ -249,10 +360,11 @@ Copy-Item .env.example .env
 # .env의 로컬 비밀번호를 변경하고 현재 PowerShell 프로세스에 불러온다.
 .\gradlew.bat test
 docker compose config --quiet
-docker compose up -d --wait
+docker compose up -d --wait mysql redis
+$env:PAYMENT_STATUS_CACHE_ENABLED = 'true'
 .\gradlew.bat bootRun
 ```
 
 ## 다음 단계 범위
 
-3단계에서는 Redis cache adapter, hit·miss, TTL, DB fallback, 100ms Lettuce command timeout, AFTER_COMMIT 동기화, cache metric과 관련 통합 테스트를 구현한다. 사용자 요청 전에는 착수하지 않는다.
+4단계에서는 Toxiproxy timeout, Redis 연결·read/write 실패, Redis 중단·복구, Redis·DB 동시 실패, liveness 격리와 동시 상태 변경을 실제로 검증한다. 사용자 요청 전에는 착수하지 않는다.
