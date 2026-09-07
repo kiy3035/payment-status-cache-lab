@@ -1,0 +1,10 @@
+.git
+.gradle
+.gradle-user-home
+.tmp
+build/*
+!build/libs
+!build/libs/payment-status-cache-lab-0.0.1-SNAPSHOT.jar
+results
+*.log
+.env

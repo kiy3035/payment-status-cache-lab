@@ -1,6 +1,6 @@
 # payment-status-cache-lab
 
-결제 상태 조회 실험을 위한 로컬 백엔드 프로젝트다. **4단계 Redis 장애·복구 검증까지 완료**했다. Redis cache-aside 조회·DB commit 이후 캐시 동기화와 실제 장애 재현 코드를 제공한다. 실행 결과는 `PROGRESS.md`에 기록한다. 성능 측정은 아직 수행하지 않았다.
+결제 상태 조회 실험을 위한 로컬 백엔드 프로젝트다. **5단계 성능 측정과 Redis fallback 검증까지 완료**했다. Redis cache-aside 조회·DB commit 이후 캐시 동기화, 실제 장애 재현, 동일 조건 성능 측정 코드를 제공한다. 실행 결과는 `PROGRESS.md`에 기록한다.
 
 ## 요구 환경
 
@@ -212,7 +212,20 @@ docker compose exec `
 
 ## DB-only k6 골격
 
-`k6/db-only.js`에 100 RPS `constant-arrival-rate` 골격이 있다. 실제 성능 측정과 결과 수집은 5단계 범위이므로 아직 실행 결과를 제공하지 않는다.
+`k6/db-only.js`는 100 RPS `constant-arrival-rate` 부하를 생성한다. DB-only·Redis 정상·Redis 중단·Redis 100ms timeout 시나리오는 다음 명령으로 동일한 애플리케이션 이미지와 데이터 조건에서 실행한다.
+
+## 5단계 성능 측정
+
+Docker Desktop이 실행 중인 상태에서 PowerShell 7로 실행한다. 스크립트가 매 실행마다 고유 Compose project, 빈 MySQL·Redis volume, 사용 가능한 포트와 임시 비밀번호를 생성하므로 `.env`나 기존 Compose 리소스를 변경하지 않는다.
+
+```powershell
+$env:DOCKER_HOST = 'npipe:////./pipe/docker_engine'
+pwsh -NoProfile -File .\scripts\run-stage5.ps1
+```
+
+DB-only와 Redis 정상은 각각 30초 워밍업 후 120초 본 측정을 3회 실행하고 중앙값을 사용한다. 정상 부하는 100 RPS constant-arrival-rate이며, Redis 중단과 300ms Toxiproxy 지연(앱 Lettuce command timeout 100ms)은 30초 동안 앱 재기동 없이 DB fallback을 확인한다. Redis 복구 후에는 같은 앱 프로세스에서 miss→hit 두 요청을 확인한다.
+
+성공 시 `STAGE5_MEASUREMENT=PASS`, `STAGE5_CLEANUP=PASS`가 출력된다. 원시 JSON, `scenario-results.json`, `cpu.csv`, `db-qps.csv`, `summary.md`, 검증 가능한 파일 manifest는 `results/<실행 ID>/`에 저장된다. k6·앱 로그는 로컬 디버깅용으로만 남고 Git에는 포함하지 않는다. 측정값은 실행 당시 로컬 CPU·Docker 자원과 공유 호스트 부하의 영향을 받으므로 성능 개선율을 일반화하지 않는다.
 
 ## 종료
 
@@ -230,4 +243,4 @@ docker compose down --volumes
 
 ## 현재 범위와 다음 단계
 
-4단계 장애·복구 검증의 실제 결과는 `PROGRESS.md`를 참고한다. 5단계 100 RPS 성능 측정·수집 자동화와 6단계 최종 결과 문서는 아직 수행하지 않았다. 사용자 요청 전에는 다음 단계를 시작하지 않는다.
+4단계 장애·복구와 5단계 성능 측정의 실제 결과는 `PROGRESS.md`를 참고한다. 6단계 최종 결과 문서는 아직 수행하지 않았다. 사용자 요청 전에는 다음 단계를 시작하지 않는다.

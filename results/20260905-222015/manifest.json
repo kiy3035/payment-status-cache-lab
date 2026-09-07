@@ -1,0 +1,112 @@
+[
+  {
+    "file": "cpu.csv",
+    "bytes": 214075,
+    "sha256": "cc01c0d75cc51eea93f25f72213f7a8612a0fd9946de9001a5f6f87f28c77c3b"
+  },
+  {
+    "file": "db-only-run-1.json",
+    "bytes": 5831,
+    "sha256": "57ba856320a4fb57a91d736420a7c6ac63385c33325aff261ec5c1c4f38d2a1d"
+  },
+  {
+    "file": "db-only-run-2.json",
+    "bytes": 6013,
+    "sha256": "5a4135eb8f765e5cc6705afdd3da4cba33f705e39c8f69d72083734df6bb08c5"
+  },
+  {
+    "file": "db-only-run-3.json",
+    "bytes": 5859,
+    "sha256": "429ecbcdefa5bd54caab13084a56a667725cae86f8b108ff95f66591f85fc5c0"
+  },
+  {
+    "file": "db-qps.csv",
+    "bytes": 543,
+    "sha256": "08fde6fe910218959e9e3b934e648e3667dce932119e3b012f1e5b562c6ceaf9"
+  },
+  {
+    "file": "environment.json",
+    "bytes": 1137,
+    "sha256": "df166c5224f3305d5db84c17dea48d3beadff65c8ab39379b9f84f01c7f612a0"
+  },
+  {
+    "file": "redis-down.json",
+    "bytes": 6143,
+    "sha256": "6d185ad8cb83c811ccdd28acc192082457a300367f896e4ea4d949d74c0049cf"
+  },
+  {
+    "file": "redis-recovery.json",
+    "bytes": 4791,
+    "sha256": "43f335741664bcbe18e5de4f72682f167337b9b27375ed3f442e89abe19a6008"
+  },
+  {
+    "file": "redis-run-1.json",
+    "bytes": 5875,
+    "sha256": "f0435dbe4d0d6f49f1be3a4fdf6e02b4916a6dfce317000076873141c14dac1a"
+  },
+  {
+    "file": "redis-run-2.json",
+    "bytes": 5872,
+    "sha256": "2ccf4730bbca8b0096575b27f2a41fcb76eb6e63b9280d19ceeb6481a8feaec5"
+  },
+  {
+    "file": "redis-run-3.json",
+    "bytes": 5842,
+    "sha256": "1f5d4c68d9a8a4afa42f2dfdc88848c6ea49e7e95557820a82964a1891203c36"
+  },
+  {
+    "file": "redis-timeout.json",
+    "bytes": 6272,
+    "sha256": "9ed6692447ce91cd4416e95ffb7579dfa2ecedb5060419486fae38f8d2bf772b"
+  },
+  {
+    "file": "scenario-results.json",
+    "bytes": 7226,
+    "sha256": "6f2e839b51bb03f71a80971e2508ee2d8179510c8c7c43b09fe9c76447f9e982"
+  },
+  {
+    "file": "summary.md",
+    "bytes": 1503,
+    "sha256": "62b744a4c65c2a4fad00eb576ffe3d5e3d23b907c9245dff08e4b0ee4774a190"
+  },
+  {
+    "file": "warmup-db-only-run-1.json",
+    "bytes": 6178,
+    "sha256": "92f171efcc65a569b4dc4a9749e13e4de968b8736cffd87488647f2c9d4b0350"
+  },
+  {
+    "file": "warmup-db-only-run-2.json",
+    "bytes": 5856,
+    "sha256": "085c5ccb71e27d981f2f9374d029caf10466cd65a7e747a7b57623be97cbf8ae"
+  },
+  {
+    "file": "warmup-db-only-run-3.json",
+    "bytes": 6182,
+    "sha256": "b0ae1c69e8690eece82d7a0bb5f9b0136f85c5663be162d9d0f173fae0baf1bd"
+  },
+  {
+    "file": "warmup-redis-down-run-1.json",
+    "bytes": 6207,
+    "sha256": "0f4eb86d62d4b3091f417e050f67c37c031fe1f58814c78ccddbfcdc25677d97"
+  },
+  {
+    "file": "warmup-redis-normal-run-1.json",
+    "bytes": 6248,
+    "sha256": "040e9859e71102e718d0cfadf5c4af79767bc5ef6106ad64ba34b49bface34da"
+  },
+  {
+    "file": "warmup-redis-normal-run-2.json",
+    "bytes": 6223,
+    "sha256": "6b0677434790c5e1824727c2ce62e85809af7fc43b15d34eb3c43fe66907a2ae"
+  },
+  {
+    "file": "warmup-redis-normal-run-3.json",
+    "bytes": 6227,
+    "sha256": "699199f059093185d975c4132c450e4a5f321461f15b949a598bb68ce001337f"
+  },
+  {
+    "file": "warmup-redis-timeout-run-1.json",
+    "bytes": 6205,
+    "sha256": "1d1922cf8ce82bbcc6c77d98127882010fcfa47d94fc9b3c61e339027f50fa00"
+  }
+]

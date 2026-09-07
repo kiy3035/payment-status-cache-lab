@@ -1,0 +1,31 @@
+{
+  "run_id": "20260905-222015",
+  "started_at": "2026-09-05T22:20:40.0362821+09:00",
+  "os": "Microsoft Windows 11 Home 64비트 build 26200",
+  "cpu": "11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz",
+  "memory_bytes": 8379490304,
+  "docker": "24.0.7",
+  "docker_compose": "2.23.3-desktop.2",
+  "java_image": "eclipse-temurin:21.0.12_8-jre-jammy",
+  "application_image": "payment-status-cache-lab:stage5-20260905-222015",
+  "application_image_id": "sha256:9a71de5423454041dc4b5228633063f6eda860c71cedd332c5766b818154438e",
+  "mysql_image": "mysql:8.4.6",
+  "redis_image": "redis:7.4.5-alpine",
+  "toxiproxy_image": "ghcr.io/shopify/toxiproxy:2.12.0",
+  "k6_image": "grafana/k6:1.2.3",
+  "resources": {
+    "app": "1 CPU, 512 MiB",
+    "mysql": "1 CPU, 1 GiB",
+    "redis": "0.5 CPU, 256 MiB",
+    "k6": "1 CPU, 512 MiB"
+  },
+  "jvm_options": "-XX:MaxRAMPercentage=75.0 -XX:ActiveProcessorCount=1",
+  "rps": 100,
+  "warmup_seconds": 30,
+  "normal_measurement_seconds": 120,
+  "failure_measurement_seconds": 30,
+  "hot_set_size": 1000,
+  "command_timeout_ms": 100,
+  "injected_latency_ms": 300,
+  "external_running_container_count": 2
+}
