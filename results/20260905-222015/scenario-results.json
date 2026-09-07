@@ -1,0 +1,330 @@
+[
+  {
+    "scenario": "db-only",
+    "run": 1,
+    "duration_seconds": 120,
+    "requests": 12001,
+    "achieved_rps": 100.0083,
+    "success_rate": 100.0,
+    "dropped_iterations": 0,
+    "avg_ms": 5.1086,
+    "p50_ms": 3.8202,
+    "p95_ms": 9.8323,
+    "p99_ms": 35.2586,
+    "max_ms": 142.3811,
+    "app_db_reads": 12001,
+    "app_db_qps": 100.0083,
+    "mysql_selects": 12002,
+    "mysql_select_qps": 100.0167,
+    "cache_hit_ratio": 0,
+    "cache_hit": 0,
+    "cache_miss": 0,
+    "cache_timeout": 0,
+    "cache_error": 0,
+    "cache_disabled": 12001,
+    "redis_get_commands": 0,
+    "app_cpu": {
+      "average": 39.6352,
+      "p95": 96.0,
+      "samples": 120
+    },
+    "mysql_cpu": {
+      "average": 13.6325,
+      "p95": 19.17,
+      "samples": 120
+    },
+    "redis_cpu": {
+      "average": 0.7135,
+      "p95": 1.42,
+      "samples": 120
+    },
+    "raw_summary": "db-only-run-1.json"
+  },
+  {
+    "scenario": "db-only",
+    "run": 2,
+    "duration_seconds": 120,
+    "requests": 12000,
+    "achieved_rps": 100.0,
+    "success_rate": 100.0,
+    "dropped_iterations": 0,
+    "avg_ms": 6.3199,
+    "p50_ms": 4.2903,
+    "p95_ms": 19.2359,
+    "p99_ms": 41.6904,
+    "max_ms": 163.338,
+    "app_db_reads": 12000,
+    "app_db_qps": 100.0,
+    "mysql_selects": 12001,
+    "mysql_select_qps": 100.0083,
+    "cache_hit_ratio": 0,
+    "cache_hit": 0,
+    "cache_miss": 0,
+    "cache_timeout": 0,
+    "cache_error": 0,
+    "cache_disabled": 12000,
+    "redis_get_commands": 0,
+    "app_cpu": {
+      "average": 47.7763,
+      "p95": 98.28,
+      "samples": 120
+    },
+    "mysql_cpu": {
+      "average": 15.4181,
+      "p95": 21.66,
+      "samples": 120
+    },
+    "redis_cpu": {
+      "average": 0.8315,
+      "p95": 1.8,
+      "samples": 120
+    },
+    "raw_summary": "db-only-run-2.json"
+  },
+  {
+    "scenario": "db-only",
+    "run": 3,
+    "duration_seconds": 120,
+    "requests": 12001,
+    "achieved_rps": 100.0083,
+    "success_rate": 100.0,
+    "dropped_iterations": 0,
+    "avg_ms": 44.7963,
+    "p50_ms": 4.7244,
+    "p95_ms": 198.2641,
+    "p99_ms": 959.7855,
+    "max_ms": 3009.0543,
+    "app_db_reads": 12001,
+    "app_db_qps": 100.0083,
+    "mysql_selects": 12002,
+    "mysql_select_qps": 100.0167,
+    "cache_hit_ratio": 0,
+    "cache_hit": 0,
+    "cache_miss": 0,
+    "cache_timeout": 0,
+    "cache_error": 0,
+    "cache_disabled": 12001,
+    "redis_get_commands": 0,
+    "app_cpu": {
+      "average": 58.3015,
+      "p95": 100.87,
+      "samples": 120
+    },
+    "mysql_cpu": {
+      "average": 16.143,
+      "p95": 24.68,
+      "samples": 120
+    },
+    "redis_cpu": {
+      "average": 0.9645,
+      "p95": 2.72,
+      "samples": 120
+    },
+    "raw_summary": "db-only-run-3.json"
+  },
+  {
+    "scenario": "redis-normal",
+    "run": 1,
+    "duration_seconds": 120,
+    "requests": 12001,
+    "achieved_rps": 100.0083,
+    "success_rate": 100.0,
+    "dropped_iterations": 0,
+    "avg_ms": 3.2311,
+    "p50_ms": 2.2867,
+    "p95_ms": 5.5197,
+    "p99_ms": 25.5673,
+    "max_ms": 190.1517,
+    "app_db_reads": 1,
+    "app_db_qps": 0.0083,
+    "mysql_selects": 2,
+    "mysql_select_qps": 0.0167,
+    "cache_hit_ratio": 0.999917,
+    "cache_hit": 12000,
+    "cache_miss": 0,
+    "cache_timeout": 1,
+    "cache_error": 0,
+    "cache_disabled": 0,
+    "redis_get_commands": 12001,
+    "app_cpu": {
+      "average": 29.7692,
+      "p95": 87.73,
+      "samples": 120
+    },
+    "mysql_cpu": {
+      "average": 1.939,
+      "p95": 7.13,
+      "samples": 120
+    },
+    "redis_cpu": {
+      "average": 2.3683,
+      "p95": 3.41,
+      "samples": 120
+    },
+    "raw_summary": "redis-run-1.json"
+  },
+  {
+    "scenario": "redis-normal",
+    "run": 2,
+    "duration_seconds": 120,
+    "requests": 12001,
+    "achieved_rps": 100.0083,
+    "success_rate": 100.0,
+    "dropped_iterations": 0,
+    "avg_ms": 4.2953,
+    "p50_ms": 2.3702,
+    "p95_ms": 4.3586,
+    "p99_ms": 18.6836,
+    "max_ms": 872.1893,
+    "app_db_reads": 10,
+    "app_db_qps": 0.0833,
+    "mysql_selects": 11,
+    "mysql_select_qps": 0.0917,
+    "cache_hit_ratio": 0.999167,
+    "cache_hit": 11991,
+    "cache_miss": 0,
+    "cache_timeout": 10,
+    "cache_error": 0,
+    "cache_disabled": 0,
+    "redis_get_commands": 12001,
+    "app_cpu": {
+      "average": 26.2617,
+      "p95": 66.73,
+      "samples": 120
+    },
+    "mysql_cpu": {
+      "average": 1.898,
+      "p95": 4.72,
+      "samples": 120
+    },
+    "redis_cpu": {
+      "average": 2.4434,
+      "p95": 3.39,
+      "samples": 120
+    },
+    "raw_summary": "redis-run-2.json"
+  },
+  {
+    "scenario": "redis-normal",
+    "run": 3,
+    "duration_seconds": 120,
+    "requests": 12001,
+    "achieved_rps": 100.0083,
+    "success_rate": 100.0,
+    "dropped_iterations": 0,
+    "avg_ms": 2.8555,
+    "p50_ms": 2.4523,
+    "p95_ms": 4.5394,
+    "p99_ms": 10.5836,
+    "max_ms": 75.1293,
+    "app_db_reads": 0,
+    "app_db_qps": 0.0,
+    "mysql_selects": 1,
+    "mysql_select_qps": 0.0083,
+    "cache_hit_ratio": 1.0,
+    "cache_hit": 12001,
+    "cache_miss": 0,
+    "cache_timeout": 0,
+    "cache_error": 0,
+    "cache_disabled": 0,
+    "redis_get_commands": 12001,
+    "app_cpu": {
+      "average": 26.7878,
+      "p95": 67.61,
+      "samples": 120
+    },
+    "mysql_cpu": {
+      "average": 1.5784,
+      "p95": 4.29,
+      "samples": 120
+    },
+    "redis_cpu": {
+      "average": 2.4172,
+      "p95": 3.35,
+      "samples": 120
+    },
+    "raw_summary": "redis-run-3.json"
+  },
+  {
+    "scenario": "redis-down",
+    "run": 1,
+    "duration_seconds": 30,
+    "requests": 2991,
+    "achieved_rps": 99.7,
+    "success_rate": 100.0,
+    "dropped_iterations": 11,
+    "avg_ms": 813.6432,
+    "p50_ms": 217.2185,
+    "p95_ms": 2862.956,
+    "p99_ms": 4875.826,
+    "max_ms": 5251.146,
+    "app_db_reads": 2991,
+    "app_db_qps": 99.7,
+    "mysql_selects": 2992,
+    "mysql_select_qps": 99.7333,
+    "cache_hit_ratio": 0.0,
+    "cache_hit": 0,
+    "cache_miss": 0,
+    "cache_timeout": 0,
+    "cache_error": 2991,
+    "cache_disabled": 0,
+    "redis_get_commands": 0,
+    "app_cpu": {
+      "average": 96.35,
+      "p95": 108.28,
+      "samples": 30
+    },
+    "mysql_cpu": {
+      "average": 15.9747,
+      "p95": 30.01,
+      "samples": 30
+    },
+    "redis_cpu": {
+      "average": 0.0,
+      "p95": 0.0,
+      "samples": 30
+    },
+    "raw_summary": "redis-down.json"
+  },
+  {
+    "scenario": "redis-timeout",
+    "run": 1,
+    "duration_seconds": 30,
+    "requests": 2854,
+    "achieved_rps": 95.1333,
+    "success_rate": 100.0,
+    "dropped_iterations": 146,
+    "avg_ms": 2704.1618,
+    "p50_ms": 2633.5247,
+    "p95_ms": 5111.2817,
+    "p99_ms": 6475.5296,
+    "max_ms": 8755.7608,
+    "app_db_reads": 2853,
+    "app_db_qps": 95.1,
+    "mysql_selects": 2854,
+    "mysql_select_qps": 95.1333,
+    "cache_hit_ratio": 0.00035,
+    "cache_hit": 1,
+    "cache_miss": 0,
+    "cache_timeout": 2853,
+    "cache_error": 0,
+    "cache_disabled": 0,
+    "redis_get_commands": 2595,
+    "app_cpu": {
+      "average": 95.772,
+      "p95": 104.68,
+      "samples": 30
+    },
+    "mysql_cpu": {
+      "average": 13.8777,
+      "p95": 18.77,
+      "samples": 30
+    },
+    "redis_cpu": {
+      "average": 2.0053,
+      "p95": 3.0,
+      "samples": 30
+    },
+    "raw_summary": "redis-timeout.json"
+  }
+]

@@ -1,2 +1,7 @@
-# Auto detect text files and perform LF normalization
+# 텍스트 파일을 자동 감지하고 LF로 정규화한다.
 * text=auto
+
+# 측정 원시 결과는 운영체제와 무관하게 manifest 해시를 유지한다.
+results/**/*.json text eol=lf
+results/**/*.csv text eol=lf
+results/**/*.md text eol=lf

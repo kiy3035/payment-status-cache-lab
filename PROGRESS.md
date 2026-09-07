@@ -1,6 +1,6 @@
 # 진행 상황
 
-기준일: 2026-09-04
+기준일: 2026-09-07
 
 ## 단계 상태
 
@@ -8,7 +8,8 @@
 - 2단계 — 상태 전이와 DB-only API: 완료
 - 3단계 — Redis 우선 조회와 상태 동기화: 완료
 - 4단계 — Redis 장애와 복구 검증: 완료
-- 5~6단계: 미착수
+- 5단계 — 동일 조건 성능 측정과 장애 fallback 수집: 완료
+- 6단계 — 최종 결과 문서화: 미착수
 
 ## 1단계 완료 항목
 
@@ -416,6 +417,65 @@ git diff --check
 - `scripts/verify-stage4.ps1`
 - `docker-compose.yml`, `.env.example`, `README.md`, `PROGRESS.md`
 
+## 5단계 구현 항목
+
+- 단일 Boot JAR를 사용하는 Java 21 애플리케이션 이미지와 성능 측정 전용 Compose 구성
+- 앱 1 CPU/512 MiB, MySQL 1 CPU/1 GiB, Redis 0.5 CPU/256 MiB, k6 1 CPU/512 MiB의 고정 자원 제한
+- DB-only와 Redis 정상 모드에서 동일 API·애플리케이션 이미지·JVM 옵션·100,000건 데이터·1,000개 hot set·100 RPS를 사용하는 k6 부하
+- 정상 시나리오별 30초 워밍업, 120초 본 측정 3회와 지표별 중앙값 계산
+- Redis 중단과 Toxiproxy 300ms 지연/Lettuce 100ms command timeout의 30초 fallback 시나리오
+- Redis 복구 뒤 같은 애플리케이션 프로세스에서 신규 ID의 miss→hit 확인
+- Prometheus counter, MySQL `Com_select`, Redis GET commandstats, 1초 간격 Docker CPU 수집
+- 원시 k6 JSON, 집계 JSON, CPU·DB QPS CSV, Markdown 비교표, SHA-256 manifest 생성
+- 실행마다 고유 Compose project·빈 volume·가용 포트·임시 비밀번호를 사용하고 종료 시 해당 실행 리소스만 정리
+
+## 5단계 실제 실행 명령과 테스트 결과
+
+```powershell
+$env:DOCKER_HOST = 'npipe:////./pipe/docker_engine'
+pwsh -NoProfile -File .\scripts\run-stage5.ps1
+
+$env:GRADLE_USER_HOME = (Resolve-Path -LiteralPath '.gradle-user-home').Path
+$env:JAVA_TOOL_OPTIONS = '-Djava.io.tmpdir=' + (Resolve-Path -LiteralPath '.tmp').Path
+.\gradlew.bat --no-daemon test --rerun-tasks --max-workers=1
+```
+
+- 측정 실행 ID: `20260905-222015`
+- 측정 스크립트 종료: `STAGE5_MEASUREMENT=PASS`, `STAGE5_CLEANUP=PASS`
+- Gradle: `BUILD SUCCESSFUL in 2m 48s`, 4개 task 모두 실제 실행
+- JUnit XML 10개 suite 합계: 52 tests, failures 0, errors 0, skipped 0
+- 기본 Compose와 성능 override를 함께 사용한 `docker compose config --quiet` 종료 코드 0
+- 원시 결과와 집계 요청 수, 복구 miss 1회·hit 1회, CPU 원시 데이터 존재 여부를 스크립트에서 재검증
+- 비밀값 패턴, 후행 공백, Git diff 오류 없음. 런타임 임시 비밀번호와 포트는 결과에 저장하지 않았다.
+
+## 5단계 실제 측정 결과
+
+정상 시나리오는 각 지표별 3회 중앙값이며, 중앙값이 서로 다른 실행에서 나올 수 있다.
+
+| 시나리오 | 요청/달성 RPS | 성공률 | 평균/p95/p99 ms | 앱 DB QPS | MySQL SELECT QPS | hit ratio |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| DB-only 중앙값 | 12,001/100.0083 | 100% | 6.3199/19.2359/41.6904 | 100.0083 | 100.0167 | 0 |
+| Redis 정상 중앙값 | 12,001/100.0083 | 100% | 3.2311/4.5394/18.6836 | 0.0083 | 0.0167 | 0.999917 |
+| Redis 중단 | 2,991/99.7 | 100% | 813.6432/2862.956/4875.826 | 99.7 | 99.7333 | 0 |
+| Redis 100ms timeout | 2,854/95.1333 | 100% | 2704.1618/5111.2817/6475.5296 | 95.1 | 95.1333 | 0.00035 |
+
+- Redis 정상 중앙값의 DB 조회량은 DB-only 대비 99.9917% 감소했다.
+- DB-only에서는 Redis GET 0회, Redis 정상에서는 실행당 Redis GET 12,001회를 확인했다.
+- Redis 중단 중 2,991건이 `ERROR_FALLBACK`으로 DB 조회에 성공했고 앱 프로세스가 유지됐다.
+- Redis 지연 중 2,853건이 `TIMEOUT_FALLBACK`으로 DB 조회에 성공했다. 1건은 정상 hit였다.
+- 장애 해제 후 신규 ID의 첫 요청 `MISS_FALLBACK`, 다음 요청 `HIT`을 같은 앱 프로세스에서 확인했다.
+- MySQL 8.4.6, Redis 7.4.5, Toxiproxy 2.12.0과 애플리케이션 health를 측정 스크립트가 확인했다.
+- 검증용 앱·컨테이너·네트워크·volume은 모두 정리했고 다른 Docker 프로젝트는 변경하지 않았다.
+- 상세 수치와 원시 결과는 `results/20260905-222015/`에 있다.
+
+## 5단계 주요 생성·수정 파일
+
+- `Dockerfile`, `.dockerignore`, `docker-compose.performance.yml`
+- `k6/status-load.js`, `k6/recovery.js`
+- `scripts/run-stage5.ps1`
+- `results/20260905-222015/`
+- `README.md`, `PROGRESS.md`
+
 ## PR 이력
 
 - 원격 `kiy3035/payment-status-cache-lab`의 초기 `main`에는 `.gitattributes`만 존재했다.
@@ -423,12 +483,16 @@ git diff --check
 - 2단계 PR #2는 `main`에 병합됐다. 병합 기준 commit은 `d486245`다.
 - 3단계 PR [#3](https://github.com/kiy3035/payment-status-cache-lab/pull/3)은 사용자 요청에 따라 `main`에 병합했다. 병합 commit은 `ca63634`다.
 - PR 작성자와 실행 계정이 같으므로 별도 자기 승인 리뷰는 하지 않았다. 보호 규칙 우회 없이 일반 merge로 처리했다.
-- 4단계는 병합된 `main` 기준 `codex/stage-4-failure-recovery` branch에서 진행한다.
+- 4단계 PR #4는 `main`에 병합됐다. 병합 commit은 `cb71084`다.
+- 5단계는 병합된 `main` 기준 `codex/stage-5-performance-measurement` branch에서 진행한다.
 
 ## 미완료 작업과 제한사항
 
-- 5단계 100 RPS·3회 반복 성능 비교와 원시 결과 수집은 미착수다. DB-only k6 골격 외의 측정 자동화는 아직 없다.
 - 6단계 RESULTS·BLOG_DRAFT와 성능 결과 기반 최종 문서화는 미착수다.
+- DB-only 3회차는 공유 호스트 부하로 p95 198.2641ms, p99 959.7855ms까지 증가했다. 정상 비교표는 규칙대로 3회 중앙값을 사용하며 변동을 숨기지 않는다.
+- Redis 정상 1·2회차에서 각각 timeout 1건·10건이 발생했지만 DB fallback으로 HTTP 성공률은 100%였다.
+- Redis 중단은 11건, timeout 시나리오는 146건의 k6 dropped iteration이 발생했다. 목표 arrival rate는 100 RPS였지만 timeout 시나리오의 실제 처리량은 95.1333 RPS다.
+- 측정 당시 프로젝트 외 Docker 컨테이너 2개가 실행 중이었다. 로컬 4코어/8 GiB 공유 호스트 결과이므로 절대 수치와 개선율을 다른 환경에 일반화하지 않는다.
 - DB·Redis는 원자적 transaction이 아니다. SET 실패 시 stale 값, 늦게 도착한 DB 조회 결과에 의한 덮어쓰기, timeout 뒤 서버 쓰기 성공 가능성은 남는다.
 - 100ms는 Redis 명령당 제한이다. 읽기 timeout·DB fallback·쓰기 timeout이 누적될 수 있으며 HTTP 전체 100ms 보장은 아니다.
 - 단절 감지 전 진행 중이던 명령은 timeout으로 분류될 수 있다. 단절 감지 이후 새 명령은 오류로 거부하고 자동 재연결한다.
@@ -448,8 +512,9 @@ docker compose config --quiet
 docker compose up -d --wait mysql redis
 $env:PAYMENT_STATUS_CACHE_ENABLED = 'true'
 .\gradlew.bat bootRun
+pwsh -NoProfile -File .\scripts\run-stage5.ps1
 ```
 
 ## 다음 단계 범위
 
-5단계에서는 동일 조건 100 RPS의 DB-only·Redis 정상·중단·timeout·복구 측정, DB QPS·CPU 자동 수집, 정상 비교 3회 반복·중앙값, JSON·CSV 원시 결과와 비교표 생성을 구현한다. 사용자 요청 전에는 착수하지 않는다.
+6단계에서는 검증된 원시 결과를 바탕으로 최종 `RESULTS.md`와 `BLOG_DRAFT.md`를 작성하고 재현성·해석·제약을 정리한다. 사용자 요청 전에는 착수하지 않는다.
