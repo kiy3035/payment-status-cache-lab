@@ -1,6 +1,6 @@
 # 진행 상황
 
-기준일: 2026-09-07
+기준일: 2026-09-10
 
 ## 단계 상태
 
@@ -9,7 +9,7 @@
 - 3단계 — Redis 우선 조회와 상태 동기화: 완료
 - 4단계 — Redis 장애와 복구 검증: 완료
 - 5단계 — 동일 조건 성능 측정과 장애 fallback 수집: 완료
-- 6단계 — 최종 결과 문서화: 미착수
+- 6단계 — 최종 결과 문서화: 완료
 
 ## 1단계 완료 항목
 
@@ -476,6 +476,55 @@ $env:JAVA_TOOL_OPTIONS = '-Djava.io.tmpdir=' + (Resolve-Path -LiteralPath '.tmp'
 - `results/20260905-222015/`
 - `README.md`, `PROGRESS.md`
 
+## 6단계 구현 항목
+
+- 실제 측정 환경·방법·정상 중앙값·회차별 변동·장애 결과·일관성 한계를 정리한 `RESULTS.md`
+- 구현 배경부터 정상 성능, Redis 중단·timeout·복구, 테스트 전략을 설명하는 `BLOG_DRAFT.md`
+- 조회와 상태 변경 흐름, MySQL Source of Truth와 Redis best-effort 갱신 구조 문서화
+- DB QPS·응답시간·CPU·hit ratio의 실제 비교값과 감소율 문서화
+- 52개 테스트의 그룹별 검증 범위와 기술 선택 이유 문서화
+- 운영 용량 보장으로 과장하지 않은 이력서·포트폴리오용 사실 기반 요약
+- manifest SHA-256, 원시 k6 JSON, 집계 JSON·CSV, 중앙값, 복구 지표와 최종 문서 수치를 대조하는 `scripts/verify-stage6.ps1`
+- 처음부터 실행 가능한 bootJar·장애 검증·성능 측정·최종 문서 검증 순서로 `README.md` 완성
+
+## 6단계 실제 실행 명령과 테스트 결과
+
+```powershell
+$env:GRADLE_USER_HOME = (Resolve-Path -LiteralPath '.gradle-user-home').Path
+$env:JAVA_TOOL_OPTIONS = '-Djava.io.tmpdir=' + (Resolve-Path -LiteralPath '.tmp').Path
+$env:DOCKER_HOST = 'npipe:////./pipe/docker_engine'
+.\gradlew.bat --no-daemon test bootJar --rerun-tasks --max-workers=1 --console=plain
+pwsh -NoProfile -File .\scripts\verify-stage4.ps1
+pwsh -NoProfile -File .\scripts\verify-stage6.ps1
+git diff --check
+```
+
+- 전체 테스트와 bootJar: `BUILD SUCCESSFUL in 3m 31s`, 6개 task 모두 실제 실행
+- JUnit XML 10개 suite 합계: 52 tests, failures 0, errors 0, skipped 0
+- 실제 장애·복구 재현: `STAGE4_RUNTIME_VERIFICATION=PASS`, `STAGE4_CLEANUP=PASS`
+- 최종 문서·원시 결과 일치 검증: `STAGE6_DOCUMENT_VERIFICATION=PASS`
+- 결과 manifest 22개, 측정 시나리오 8개, CPU 1초 표본 2,340개 검증
+
+## 6단계 최종 실제 실행 상태
+
+- 검증 project: `payment-status-cache-lab-stage4-160350ca`, 앱 PID `10624`
+- MySQL 8.4.6·Redis 7.4.5·Toxiproxy 2.12.0 모두 Compose `healthy`
+- Toxiproxy 300ms downstream 지연과 Lettuce 100ms command timeout에서 HTTP 255ms `TIMEOUT_FALLBACK`
+- 실제 Redis GET·SET 오류와 commit 이후 SET 실패에서도 DB 응답·상태 변경 성공, stale cache 확인
+- Redis stop 중 `ERROR_FALLBACK`, PATCH `AUTH`, liveness `UP`
+- 앱 재시작 없이 Redis start 후 `MISS_FALLBACK → HIT`
+- MySQL 상태 `AUTH` version 1 두 건과 전체 100,000건 확인
+- Redis·MySQL 동시 실패 시 HTTP 503, liveness `UP`, readiness `DOWN`
+- 검증용 앱·컨테이너·네트워크·volume을 모두 정리했으며 현재 프로젝트 검증 프로세스는 실행 중이지 않다.
+
+## 6단계 주요 생성·수정 파일
+
+- `RESULTS.md`
+- `BLOG_DRAFT.md`
+- `scripts/verify-stage6.ps1`
+- `README.md`
+- `PROGRESS.md`
+
 ## PR 이력
 
 - 원격 `kiy3035/payment-status-cache-lab`의 초기 `main`에는 `.gitattributes`만 존재했다.
@@ -484,11 +533,11 @@ $env:JAVA_TOOL_OPTIONS = '-Djava.io.tmpdir=' + (Resolve-Path -LiteralPath '.tmp'
 - 3단계 PR [#3](https://github.com/kiy3035/payment-status-cache-lab/pull/3)은 사용자 요청에 따라 `main`에 병합했다. 병합 commit은 `ca63634`다.
 - PR 작성자와 실행 계정이 같으므로 별도 자기 승인 리뷰는 하지 않았다. 보호 규칙 우회 없이 일반 merge로 처리했다.
 - 4단계 PR #4는 `main`에 병합됐다. 병합 commit은 `cb71084`다.
-- 5단계는 병합된 `main` 기준 `codex/stage-5-performance-measurement` branch에서 진행한다.
+- 5단계 PR #5는 `main`에 병합됐다. 병합 commit은 `f98e73f`다.
+- 6단계는 병합된 `main` 기준 `codex/stage-6-final-documentation` branch에서 진행한다.
 
-## 미완료 작업과 제한사항
+## 남은 제한사항
 
-- 6단계 RESULTS·BLOG_DRAFT와 성능 결과 기반 최종 문서화는 미착수다.
 - DB-only 3회차는 공유 호스트 부하로 p95 198.2641ms, p99 959.7855ms까지 증가했다. 정상 비교표는 규칙대로 3회 중앙값을 사용하며 변동을 숨기지 않는다.
 - Redis 정상 1·2회차에서 각각 timeout 1건·10건이 발생했지만 DB fallback으로 HTTP 성공률은 100%였다.
 - Redis 중단은 11건, timeout 시나리오는 146건의 k6 dropped iteration이 발생했다. 목표 arrival rate는 100 RPS였지만 timeout 시나리오의 실제 처리량은 95.1333 RPS다.
@@ -498,6 +547,7 @@ $env:JAVA_TOOL_OPTIONS = '-Djava.io.tmpdir=' + (Resolve-Path -LiteralPath '.tmp'
 - 단절 감지 전 진행 중이던 명령은 timeout으로 분류될 수 있다. 단절 감지 이후 새 명령은 오류로 거부하고 자동 재연결한다.
 - 복구 시 기존 모든 키를 삭제하지 않는다. miss→hit 검증은 장애 중 캐시되지 않은 ID를 사용하며 기존 stale 캐시가 자동으로 모두 최신화된다는 뜻이 아니다.
 - 기존 Flyway MySQL 8.4 지원범위 경고는 남지만 실제 migration·JPA validation·전체 테스트는 통과했다.
+- 6단계 전체 테스트 종료 중 장애 테스트가 끊은 DB 연결에 대해 Hikari validation·executor 종료 대기 경고가 출력됐다. 이후 모든 pool 종료, Testcontainers 정리와 `BUILD SUCCESSFUL`을 확인했다.
 - 무료 로컬 도구만 사용했다. 유료 API·서비스·PG사 연동·실제 결제는 수행하지 않았다.
 
 ## 재현 명령
@@ -513,8 +563,9 @@ docker compose up -d --wait mysql redis
 $env:PAYMENT_STATUS_CACHE_ENABLED = 'true'
 .\gradlew.bat bootRun
 pwsh -NoProfile -File .\scripts\run-stage5.ps1
+pwsh -NoProfile -File .\scripts\verify-stage6.ps1
 ```
 
 ## 다음 단계 범위
 
-6단계에서는 검증된 원시 결과를 바탕으로 최종 `RESULTS.md`와 `BLOG_DRAFT.md`를 작성하고 재현성·해석·제약을 정리한다. 사용자 요청 전에는 착수하지 않는다.
+`PROJECT_SPEC.md`에 정의된 1~6단계가 모두 완료됐다. 별도의 7단계는 정의돼 있지 않으며 후속 개선은 새로운 사용자 요청과 범위 합의가 있을 때만 진행한다.
