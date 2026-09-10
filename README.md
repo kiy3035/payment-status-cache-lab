@@ -1,6 +1,10 @@
 # payment-status-cache-lab
 
-결제 상태 조회 실험을 위한 로컬 백엔드 프로젝트다. **5단계 성능 측정과 Redis fallback 검증까지 완료**했다. Redis cache-aside 조회·DB commit 이후 캐시 동기화, 실제 장애 재현, 동일 조건 성능 측정 코드를 제공한다. 실행 결과는 `PROGRESS.md`에 기록한다.
+결제 상태 조회 실험을 위한 로컬 백엔드 프로젝트다. **1~6단계 구현·측정·최종 문서화를 완료**했다. Redis cache-aside 조회·DB commit 이후 캐시 동기화, 실제 장애 재현, 동일 조건 성능 측정 코드를 제공한다.
+
+- 실제 측정 결과와 해석: [`RESULTS.md`](RESULTS.md)
+- 기술 블로그 초안: [`BLOG_DRAFT.md`](BLOG_DRAFT.md)
+- 단계별 구현·검증 이력: [`PROGRESS.md`](PROGRESS.md)
 
 ## 요구 환경
 
@@ -220,12 +224,23 @@ Docker Desktop이 실행 중인 상태에서 PowerShell 7로 실행한다. 스�
 
 ```powershell
 $env:DOCKER_HOST = 'npipe:////./pipe/docker_engine'
+.\gradlew.bat bootJar
 pwsh -NoProfile -File .\scripts\run-stage5.ps1
 ```
 
 DB-only와 Redis 정상은 각각 30초 워밍업 후 120초 본 측정을 3회 실행하고 중앙값을 사용한다. 정상 부하는 100 RPS constant-arrival-rate이며, Redis 중단과 300ms Toxiproxy 지연(앱 Lettuce command timeout 100ms)은 30초 동안 앱 재기동 없이 DB fallback을 확인한다. Redis 복구 후에는 같은 앱 프로세스에서 miss→hit 두 요청을 확인한다.
 
 성공 시 `STAGE5_MEASUREMENT=PASS`, `STAGE5_CLEANUP=PASS`가 출력된다. 원시 JSON, `scenario-results.json`, `cpu.csv`, `db-qps.csv`, `summary.md`, 검증 가능한 파일 manifest는 `results/<실행 ID>/`에 저장된다. k6·앱 로그는 로컬 디버깅용으로만 남고 Git에는 포함하지 않는다. 측정값은 실행 당시 로컬 CPU·Docker 자원과 공유 호스트 부하의 영향을 받으므로 성능 개선율을 일반화하지 않는다.
+
+## 최종 결과와 문서 일치 검증
+
+다음 명령은 보존된 실행의 manifest SHA-256, 8개 시나리오 집계, 2,340개 CPU 표본, 원시 k6 요청 수, 정상 3회 중앙값, 복구 miss→hit, `RESULTS.md`·`BLOG_DRAFT.md`·`PROGRESS.md`의 핵심 수치를 함께 확인한다.
+
+```powershell
+pwsh -NoProfile -File .\scripts\verify-stage6.ps1
+```
+
+정상 결과는 `STAGE6_DOCUMENT_VERIFICATION=PASS`다. 다른 결과 디렉터리를 검사할 때는 해당 문서도 그 실행의 수치로 갱신한 뒤 `-ResultDirectory`를 지정한다.
 
 ## 종료
 
@@ -243,4 +258,4 @@ docker compose down --volumes
 
 ## 현재 범위와 다음 단계
 
-4단계 장애·복구와 5단계 성능 측정의 실제 결과는 `PROGRESS.md`를 참고한다. 6단계 최종 결과 문서는 아직 수행하지 않았다. 사용자 요청 전에는 다음 단계를 시작하지 않는다.
+프로젝트의 1~6단계가 모두 완료됐다. 측정 결과는 특정 로컬 공유 호스트의 관측값이며 운영 용량 보장값이 아니다. Redis command timeout과 HTTP 전체 deadline의 차이, TTL 동안의 stale 가능성 등 남은 한계는 `RESULTS.md`에 기록했다.
